@@ -10,6 +10,9 @@ jobs:
 
     steps:
 
+      # ==============================
+      # CONFIGURAR RDP
+      # ==============================
       - name: Configurar RDP
         shell: powershell
         run: |
@@ -32,40 +35,59 @@ jobs:
 
           Write-Host "RDP configurado."
 
+      # ==============================
+      # CRIAR USUÁRIO
+      # ==============================
       - name: Criar usuário RDP
         shell: powershell
-        env:
-          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:RDP_PASSWORD)) {
-            Write-Error "O Secret RDP_PASSWORD não foi configurado."
-            exit 1
-          }
+          Write-Host "Gerando senha..."
 
-          $password = ConvertTo-SecureString `
-            $env:RDP_PASSWORD `
+          $chars = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%'
+
+          $randomPart = -join (1..20 | ForEach-Object {
+            $chars[(Get-Random -Maximum $chars.Length)]
+          })
+
+          $password = "Aa1!" + $randomPart
+
+          $securePassword = ConvertTo-SecureString `
+            $password `
             -AsPlainText `
             -Force
 
           New-LocalUser `
             -Name "cloudpc" `
-            -Password $password `
+            -Password $securePassword `
             -FullName "Cloud PC" `
             -Description "Cloud PC RDP User" `
-            -PasswordNeverExpires
+            -PasswordNeverExpires `
+            -AccountNeverExpires
 
           Add-LocalGroupMember `
             -Group "Remote Desktop Users" `
             -Member "cloudpc"
 
-          Write-Host "Usuário cloudpc criado."
+          Write-Host ""
+          Write-Host "=========================================="
+          Write-Host "          CREDENCIAIS RDP"
+          Write-Host "=========================================="
+          Write-Host "Usuário: cloudpc"
+          Write-Host "Senha:   $password"
+          Write-Host "=========================================="
 
+      # ==============================
+      # BAIXAR NGROK
+      # ==============================
       - name: Baixar ngrok
         shell: powershell
         run: |
           $url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
+
           $zip = "$env:TEMP\ngrok.zip"
           $dir = "$env:TEMP\ngrok"
+
+          Write-Host "Baixando ngrok..."
 
           Invoke-WebRequest `
             -Uri $url `
@@ -78,31 +100,43 @@ jobs:
 
           Write-Host "ngrok instalado."
 
+      # ==============================
+      # CONFIGURAR NGROK
+      # ==============================
       - name: Configurar ngrok
         shell: powershell
         env:
           NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:NGROK_AUTH_TOKEN)) {
-            Write-Error "O Secret NGROK_AUTH_TOKEN não foi configurado."
+            Write-Error "NGROK_AUTH_TOKEN não foi configurado."
             exit 1
           }
 
-          & "$env:TEMP\ngrok\ngrok.exe" config add-authtoken $env:NGROK_AUTH_TOKEN
+          & "$env:TEMP\ngrok\ngrok.exe" `
+            config add-authtoken `
+            "$env:NGROK_AUTH_TOKEN"
 
           Write-Host "ngrok configurado."
 
+      # ==============================
+      # INICIAR NGROK
+      # ==============================
       - name: Iniciar túnel RDP
         shell: powershell
         run: |
-          $ngrok = "$env:TEMP\ngrok\ngrok.exe"
+          $ngrok = "$env:TEMP\ngroK\ngrok.exe"
+
+          if (!(Test-Path $ngrok)) {
+            $ngrok = "$env:TEMP\ngrok\ngrok.exe"
+          }
 
           Start-Process `
             -FilePath $ngrok `
             -ArgumentList "tcp 3389" `
             -WindowStyle Hidden
 
-          Write-Host "Aguardando ngrok..."
+          Write-Host "Aguardando ngrok iniciar..."
           Start-Sleep -Seconds 10
 
           $tunnels = Invoke-RestMethod `
@@ -113,7 +147,7 @@ jobs:
             Select-Object -First 1
 
           if ($null -eq $tunnel) {
-            Write-Error "Não foi possível encontrar o túnel ngrok."
+            Write-Error "O túnel ngrok não foi encontrado."
             exit 1
           }
 
@@ -128,16 +162,20 @@ jobs:
           Write-Host "USUÁRIO:"
           Write-Host "cloudpc"
           Write-Host ""
-          Write-Host "Use a senha armazenada no Secret RDP_PASSWORD."
-          Write-Host ""
           Write-Host "=========================================="
 
-      - name: Manter máquina ligada
+      # ==============================
+      # MANTER VM LIGADA
+      # ==============================
+      - name: Manter Cloud PC ligado
         shell: powershell
         run: |
-          Write-Host "Cloud PC está ativo."
+          Write-Host ""
+          Write-Host "Cloud PC está funcionando."
+          Write-Host "Não encerre este workflow enquanto estiver usando."
+          Write-Host ""
 
           while ($true) {
-            Write-Host "Cloud PC funcionando - $(Get-Date)"
+            Write-Host "Cloud PC ativo - $(Get-Date)"
             Start-Sleep -Seconds 60
           }
