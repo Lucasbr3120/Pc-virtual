@@ -9,10 +9,6 @@ jobs:
     timeout-minutes: 350
 
     steps:
-
-      # ==============================
-      # CONFIGURAR RDP
-      # ==============================
       - name: Configurar RDP
         shell: powershell
         run: |
@@ -30,21 +26,15 @@ jobs:
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-          Set-Service `
-            -Name TermService `
-            -StartupType Automatic
-
+          Set-Service -Name TermService -StartupType Automatic
           Start-Service -Name TermService
 
           Write-Host "RDP configurado."
 
-      # ==============================
-      # CRIAR USUÁRIO RDP
-      # ==============================
-      - name: Criar usuário RDP
+      - name: Criar usuário administrador
         shell: powershell
         run: |
-          Write-Host "Criando usuário..."
+          Write-Host "Criando usuário administrador..."
 
           $chars = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%'
 
@@ -62,8 +52,8 @@ jobs:
           New-LocalUser `
             -Name "cloudpc" `
             -Password $securePassword `
-            -FullName "Cloud PC" `
-            -Description "Cloud PC RDP User" `
+            -FullName "Cloud PC Administrator" `
+            -Description "Cloud PC Administrator" `
             -PasswordNeverExpires `
             -AccountNeverExpires
 
@@ -71,49 +61,47 @@ jobs:
             -Group "Remote Desktop Users" `
             -Member "cloudpc"
 
+          Add-LocalGroupMember `
+            -Group "Administrators" `
+            -Member "cloudpc"
+
           Write-Host ""
           Write-Host "=========================================="
-          Write-Host "          CREDENCIAIS RDP"
+          Write-Host "       CREDENCIAIS DO CLOUD PC"
           Write-Host "=========================================="
           Write-Host "Usuário: cloudpc"
           Write-Host "Senha:   $password"
+          Write-Host "Permissão: ADMINISTRADOR"
           Write-Host "=========================================="
 
-      # ==============================
-      # CONECTAR AO TAILSCALE
-      # ==============================
       - name: Conectar ao Tailscale
         uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSSCALE_AUTH_KEY }}
 
-      # ==============================
-      # MOSTRAR IP DO TAILSCALE
-      # ==============================
-      - name: Mostrar endereço do Cloud PC
+      - name: Verificar Tailscale
         shell: powershell
         run: |
+          Write-Host "Verificando conexão Tailscale..."
+
+          $ip = tailscale ip -4
+
           Write-Host ""
           Write-Host "=========================================="
           Write-Host "          WINDOWS CLOUD PC"
           Write-Host "=========================================="
           Write-Host ""
-
-          $ip = tailscale ip -4
-
           Write-Host "IP TAILSCALE:"
           Write-Host $ip
-
           Write-Host ""
           Write-Host "USUÁRIO:"
           Write-Host "cloudpc"
-
+          Write-Host ""
+          Write-Host "PERMISSÃO:"
+          Write-Host "ADMINISTRADOR"
           Write-Host ""
           Write-Host "=========================================="
 
-      # ==============================
-      # DESCOBRIR LOCALIZAÇÃO DA VM
-      # ==============================
       - name: Descobrir localização do servidor
         shell: powershell
         run: |
@@ -123,21 +111,18 @@ jobs:
           Write-Host "=========================================="
 
           try {
-            $ip = (Invoke-RestMethod `
-              -Uri "https://api.ipify.org").Trim()
+            $ip = (Invoke-RestMethod -Uri "https://api.ipify.org").Trim()
 
             Write-Host "IP público: $ip"
             Write-Host ""
 
-            $info = Invoke-RestMethod `
-              -Uri "https://ipwho.is/$ip"
+            $info = Invoke-RestMethod -Uri "https://ipwho.is/$ip"
 
             Write-Host "País:       $($info.country)"
             Write-Host "Região:     $($info.region)"
             Write-Host "Cidade:     $($info.city)"
             Write-Host "Continente: $($info.continent)"
             Write-Host "ISP:        $($info.connection.isp)"
-
           }
           catch {
             Write-Host "Não foi possível obter a localização."
@@ -147,119 +132,33 @@ jobs:
           Write-Host ""
           Write-Host "=========================================="
 
-      # ==============================
-      # MANTER VM LIGADA
-      # ==============================
-      - name: Manter Cloud PC ligado
+      - name: Verificar administrador
         shell: powershell
         run: |
-          Write-Host ""
-          Write-Host "Cloud PC está funcionando."
-          Write-Host "Não encerre este workflow enquanto estiver usando."
-          Write-Host ""
+          Write-Host "Verificando permissões..."
 
-          while ($true) {
-            Write-Host "Cloud PC ativo - $(Get-Date)"
-            Start-Sleep -Seconds 60
-          }      # MANTER VM LIGADA
-      # ==============================
-      - name: Manter Cloud PC ligado
-        shell: powershell
-        run: |
-          Write-Host ""
-          Write-Host "Cloud PC está funcionando."
-          Write-Host ""
+          $members = Get-LocalGroupMember -Group "Administrators"
 
-          while ($true) {
-            Write-Host "Cloud PC ativo - $(Get-Date)"
-            Start-Sleep -Seconds 60
-          }          Write-Host "=========================================="
-          Write-Host "Use esse IP no aplicativo de Área de"
-          Write-Host "Trabalho Remota do seu celular."
-          Write-Host "=========================================="
-
-      # ==============================
-      # MANTER A VM LIGADA
-      # ==============================
-      - name: Manter Cloud PC ligado
-        shell: powershell
-        run: |
-          Write-Host ""
-          Write-Host "Cloud PC está funcionando."
-          Write-Host "Não encerre este workflow enquanto estiver usando."
-          Write-Host ""
-
-          while ($true) {
-            Write-Host "Cloud PC ativo - $(Get-Date)"
-            Start-Sleep -Seconds 60
-          }
-          Write-Host "Aguardando ngrok iniciar..."
-
-          $started = $false
-
-          for ($i = 1; $i -le 30; $i++) {
-
-            Start-Sleep -Seconds 2
-
-            Write-Host "Tentativa $i/30..."
-
-            try {
-              $tunnels = Invoke-RestMethod `
-                -Uri "http://127.0.0.1:4040/api/tunnels" `
-                -TimeoutSec 3
-
-              $started = $true
-              break
-            }
-            catch {
-              Write-Host "API ainda não disponível."
-            }
+          $admin = $members | Where-Object {
+            $_.Name -like "*\cloudpc"
           }
 
-          if (!$started) {
-
+          if ($admin) {
             Write-Host ""
-            Write-Host "=========================================="
-            Write-Host "LOG DO NGROK"
-            Write-Host "=========================================="
-
-            if (Test-Path $logFile) {
-              Get-Content $logFile
-            }
-            else {
-              Write-Host "Log não encontrado."
-            }
-
+            Write-Host "cloudpc é ADMINISTRADOR."
+          }
+          else {
+            Write-Error "cloudpc não está no grupo Administrators."
             exit 1
           }
-
-          $tunnel = $tunnels.tunnels |
-            Where-Object { $_.proto -eq "tcp" } |
-            Select-Object -First 1
-
-          if ($null -eq $tunnel) {
-            Write-Error "Nenhum túnel TCP foi encontrado."
-            Get-Content $logFile
-            exit 1
-          }
-
-          Write-Host ""
-          Write-Host "=========================================="
-          Write-Host "       WINDOWS CLOUD PC"
-          Write-Host "=========================================="
-          Write-Host ""
-          Write-Host "ENDEREÇO RDP:"
-          Write-Host $tunnel.public_url
-          Write-Host ""
-          Write-Host "USUÁRIO:"
-          Write-Host "cloudpc"
-          Write-Host ""
-          Write-Host "=========================================="
 
       - name: Manter Cloud PC ligado
         shell: powershell
         run: |
+          Write-Host ""
           Write-Host "Cloud PC está funcionando."
+          Write-Host "Não encerre este workflow enquanto estiver usando."
+          Write-Host ""
 
           while ($true) {
             Write-Host "Cloud PC ativo - $(Get-Date)"
