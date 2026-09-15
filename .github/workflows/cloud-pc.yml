@@ -1,0 +1,143 @@
+name: Windows Cloud PC
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cloud-pc:
+    runs-on: windows-latest
+    timeout-minutes: 350
+
+    steps:
+
+      - name: Configurar RDP
+        shell: powershell
+        run: |
+          Write-Host "Configurando RDP..."
+
+          Set-ItemProperty `
+            -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
+            -Name "fDenyTSConnections" `
+            -Value 0
+
+          Set-ItemProperty `
+            -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" `
+            -Name "UserAuthentication" `
+            -Value 1
+
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+          Set-Service -Name TermService -StartupType Automatic
+          Start-Service -Name TermService
+
+          Write-Host "RDP configurado."
+
+      - name: Criar usuário RDP
+        shell: powershell
+        env:
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RDP_PASSWORD)) {
+            Write-Error "O Secret RDP_PASSWORD não foi configurado."
+            exit 1
+          }
+
+          $password = ConvertTo-SecureString `
+            $env:RDP_PASSWORD `
+            -AsPlainText `
+            -Force
+
+          New-LocalUser `
+            -Name "cloudpc" `
+            -Password $password `
+            -FullName "Cloud PC" `
+            -Description "Cloud PC RDP User" `
+            -PasswordNeverExpires
+
+          Add-LocalGroupMember `
+            -Group "Remote Desktop Users" `
+            -Member "cloudpc"
+
+          Write-Host "Usuário cloudpc criado."
+
+      - name: Baixar ngrok
+        shell: powershell
+        run: |
+          $url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
+          $zip = "$env:TEMP\ngrok.zip"
+          $dir = "$env:TEMP\ngrok"
+
+          Invoke-WebRequest `
+            -Uri $url `
+            -OutFile $zip
+
+          Expand-Archive `
+            -Path $zip `
+            -DestinationPath $dir `
+            -Force
+
+          Write-Host "ngrok instalado."
+
+      - name: Configurar ngrok
+        shell: powershell
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NGROK_AUTH_TOKEN)) {
+            Write-Error "O Secret NGROK_AUTH_TOKEN não foi configurado."
+            exit 1
+          }
+
+          & "$env:TEMP\ngrok\ngrok.exe" config add-authtoken $env:NGROK_AUTH_TOKEN
+
+          Write-Host "ngrok configurado."
+
+      - name: Iniciar túnel RDP
+        shell: powershell
+        run: |
+          $ngrok = "$env:TEMP\ngrok\ngrok.exe"
+
+          Start-Process `
+            -FilePath $ngrok `
+            -ArgumentList "tcp 3389" `
+            -WindowStyle Hidden
+
+          Write-Host "Aguardando ngrok..."
+          Start-Sleep -Seconds 10
+
+          $tunnels = Invoke-RestMethod `
+            -Uri "http://127.0.0.1:4040/api/tunnels"
+
+          $tunnel = $tunnels.tunnels |
+            Where-Object { $_.proto -eq "tcp" } |
+            Select-Object -First 1
+
+          if ($null -eq $tunnel) {
+            Write-Error "Não foi possível encontrar o túnel ngrok."
+            exit 1
+          }
+
+          Write-Host ""
+          Write-Host "=========================================="
+          Write-Host "          WINDOWS CLOUD PC"
+          Write-Host "=========================================="
+          Write-Host ""
+          Write-Host "ENDEREÇO RDP:"
+          Write-Host $tunnel.public_url
+          Write-Host ""
+          Write-Host "USUÁRIO:"
+          Write-Host "cloudpc"
+          Write-Host ""
+          Write-Host "Use a senha armazenada no Secret RDP_PASSWORD."
+          Write-Host ""
+          Write-Host "=========================================="
+
+      - name: Manter máquina ligada
+        shell: powershell
+        run: |
+          Write-Host "Cloud PC está ativo."
+
+          while ($true) {
+            Write-Host "Cloud PC funcionando - $(Get-Date)"
+            Start-Sleep -Seconds 60
+          }
