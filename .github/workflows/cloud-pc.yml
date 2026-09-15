@@ -30,7 +30,10 @@ jobs:
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-          Set-Service -Name TermService -StartupType Automatic
+          Set-Service `
+            -Name TermService `
+            -StartupType Automatic
+
           Start-Service -Name TermService
 
           Write-Host "RDP configurado."
@@ -109,7 +112,56 @@ jobs:
           Write-Host "=========================================="
 
       # ==============================
+      # DESCOBRIR LOCALIZAÇÃO DA VM
+      # ==============================
+      - name: Descobrir localização do servidor
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "=========================================="
+          Write-Host "       LOCALIZAÇÃO DO SERVIDOR"
+          Write-Host "=========================================="
+
+          try {
+            $ip = (Invoke-RestMethod `
+              -Uri "https://api.ipify.org").Trim()
+
+            Write-Host "IP público: $ip"
+            Write-Host ""
+
+            $info = Invoke-RestMethod `
+              -Uri "https://ipwho.is/$ip"
+
+            Write-Host "País:       $($info.country)"
+            Write-Host "Região:     $($info.region)"
+            Write-Host "Cidade:     $($info.city)"
+            Write-Host "Continente: $($info.continent)"
+            Write-Host "ISP:        $($info.connection.isp)"
+
+          }
+          catch {
+            Write-Host "Não foi possível obter a localização."
+            Write-Host $_.Exception.Message
+          }
+
+          Write-Host ""
+          Write-Host "=========================================="
+
+      # ==============================
       # MANTER VM LIGADA
+      # ==============================
+      - name: Manter Cloud PC ligado
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "Cloud PC está funcionando."
+          Write-Host "Não encerre este workflow enquanto estiver usando."
+          Write-Host ""
+
+          while ($true) {
+            Write-Host "Cloud PC ativo - $(Get-Date)"
+            Start-Sleep -Seconds 60
+          }      # MANTER VM LIGADA
       # ==============================
       - name: Manter Cloud PC ligado
         shell: powershell
