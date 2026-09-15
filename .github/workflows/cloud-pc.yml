@@ -30,16 +30,13 @@ jobs:
 
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-          Set-Service `
-            -Name TermService `
-            -StartupType Automatic
-
+          Set-Service -Name TermService -StartupType Automatic
           Start-Service -Name TermService
 
           Write-Host "RDP configurado."
 
       # ==============================
-      # CRIAR USUÁRIO
+      # CRIAR USUÁRIO RDP
       # ==============================
       - name: Criar usuário RDP
         shell: powershell
@@ -85,10 +82,10 @@ jobs:
       - name: Conectar ao Tailscale
         uses: tailscale/github-action@v4
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          authkey: ${{ secrets.TAILSSCALE_AUTH_KEY }}
 
       # ==============================
-      # PEGAR IP DO TAILSCALE
+      # MOSTRAR IP DO TAILSCALE
       # ==============================
       - name: Mostrar endereço do Cloud PC
         shell: powershell
@@ -110,6 +107,21 @@ jobs:
 
           Write-Host ""
           Write-Host "=========================================="
+
+      # ==============================
+      # MANTER VM LIGADA
+      # ==============================
+      - name: Manter Cloud PC ligado
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "Cloud PC está funcionando."
+          Write-Host ""
+
+          while ($true) {
+            Write-Host "Cloud PC ativo - $(Get-Date)"
+            Start-Sleep -Seconds 60
+          }          Write-Host "=========================================="
           Write-Host "Use esse IP no aplicativo de Área de"
           Write-Host "Trabalho Remota do seu celular."
           Write-Host "=========================================="
